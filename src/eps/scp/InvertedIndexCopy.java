@@ -23,7 +23,7 @@ public class InvertedIndexCopy {
 
     // Hash Map convertir de ids ficheros a su ruta
     private final Map<Integer, String> Files = new HashMap<>(); //fet
-    private final Lock filesLock = new ReentrantLock(); //fet
+    private final Lock filesLock = new ReentrantLock(); //f
 
     // Hash Map para acceder a las líneas de todos los ficheros del indice.
     private final Map<Location, String> IndexFilesLines = new HashMap<>();
