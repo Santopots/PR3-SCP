@@ -37,7 +37,6 @@ public class InvertedIndexCopy {
     private long TotalLocations, TotalWords, TotalLines;
     private int TotalProcessedFiles, fileID;
 
-
     // Getters
     public Map<Integer, String> getFiles() {
         return Files;
