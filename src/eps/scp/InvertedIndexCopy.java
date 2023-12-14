@@ -117,6 +117,7 @@ public class InvertedIndexCopy {
         List<Thread> workers = new ArrayList<>();
         this.processDirectory(new File(InputDirPath), workers);
         CountDownLatch latch = new CountDownLatch(workers.size());
+
         for (Thread t : workers) {
            t.start();
         }
