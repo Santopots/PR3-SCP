@@ -8,10 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.Map.Entry;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -119,12 +116,15 @@ public class InvertedIndexCopy {
     private void processDirectory() {
         List<Thread> workers = new ArrayList<>();
         this.processDirectory(new File(InputDirPath), workers);
+        CountDownLatch latch = new CountDownLatch(workers.size());
         for (Thread t : workers) {
-            try {
-                t.join();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+           t.start();
+        }
+        try {
+            // Wait for all worker threads to complete
+            latch.await();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 
