@@ -8,8 +8,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -23,7 +25,7 @@ public class InvertedIndexCopy {
 
     // Hash Map convertir de ids ficheros a su ruta
     private final Map<Integer, String> Files = new HashMap<>(); //fet
-    private final Lock filesLock = new ReentrantLock(); //f
+    private final Lock filesLock = new ReentrantLock();
 
     // Hash Map para acceder a las líneas de todos los ficheros del indice.
     private final Map<Location, String> IndexFilesLines = new HashMap<>();
@@ -36,6 +38,8 @@ public class InvertedIndexCopy {
     // Estadisticas para verificar la correcta contrucción del indice invertido.
     private long TotalLocations, TotalWords, TotalLines;
     private int TotalProcessedFiles, fileID;
+
+    private final CyclicBarrier barrier = new CyclicBarrier(2);
 
     // Getters
     public Map<Integer, String> getFiles() {
@@ -74,14 +78,22 @@ public class InvertedIndexCopy {
         TotalLocations = TotalLines = TotalWords = 0;
 
         //aquest fil virtual buscarà els docs a un directori
-        Thread processor = Thread.ofVirtual().name("file-finder-thread").start(this::processDirectory);
+        Thread processor = Thread.ofVirtual().name("file-finder-thread").start(() -> {
+            processDirectory();
+            try {
+                // El hilo processor espera aquí hasta que el hilo principal también llegue a este punto
+                barrier.await();
+            } catch (InterruptedException | BrokenBarrierException e) {
+                throw new RuntimeException(e);
+            }
+        });
 
         try {
-            processor.join();
-        } catch (InterruptedException e) {
+            // El hilo principal espera aquí hasta que el hilo processor también llegue a este punto
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
             throw new RuntimeException(e);
         }
-
         Instant finish = Instant.now();
         long timeElapsed = Duration.between(start, finish).toMillis();  //in millis
         System.out.printf("[Build Index with %d files] Total execution time: %.3f secs.\n", TotalProcessedFiles, timeElapsed / 1000.0);
@@ -303,8 +315,11 @@ public class InvertedIndexCopy {
         int numberOfFiles, remainingFiles;
         long remainingKeys, keysByFile;
         String key;
-        //obtenir el conjunt de claus de un mapa
-        List<String> keys = new ArrayList<>(Hash.keySet());
+        //obtenir el conjunt de claus de un
+        List<String> keys;
+        synchronized (Hash){
+            keys = new ArrayList<>(Hash.keySet());
+        }
 
         // Crearem un fil per cada fitxer a escriure
         numberOfFiles = keys.size() / DKeysByFileIndex;
@@ -343,12 +358,14 @@ public class InvertedIndexCopy {
     // Método para salvar una clave y sus ubicaciones en un fichero.
     public void saveIndexKey(String key, BufferedWriter bw) {
         try {
-            HashSet<Location> locations = Hash.get(key);
-            // Creamos un string con todos los offsets separados por una coma.
-            //String joined1 = StringUtils.join(locations, ";");
-            String joined = String.join(";", locations.toString());
-            bw.write(key + "\t");
-            bw.write(joined.substring(1, joined.length() - 1) + "\n");
+            synchronized (Hash){
+                HashSet<Location> locations = Hash.get(key);
+                // Creamos un string con todos los offsets separados por una coma.
+                //String joined1 = StringUtils.join(locations, ";");
+                String joined = String.join(";", locations.toString());
+                bw.write(key + "\t");
+                bw.write(joined.substring(1, joined.length() - 1) + "\n");
+            }
         } catch (IOException e) {
             System.err.println("Error writing Index file");
             e.printStackTrace();
@@ -478,7 +495,9 @@ public class InvertedIndexCopy {
                                     int line = Integer.parseInt(location[1]);
                                     locationsList.add(new Location(fileId, line));
                                 }
-                                Hash.put(word, locationsList);
+                                synchronized (Hash){
+                                    Hash.put(word, locationsList);
+                                }
                             }
                         } catch (IOException e) {
                             System.err.println("Error reading Index file");
