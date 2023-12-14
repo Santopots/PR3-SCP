@@ -39,8 +39,6 @@ public class InvertedIndexCopy {
     private long TotalLocations, TotalWords, TotalLines;
     private int TotalProcessedFiles, fileID;
 
-    private final CyclicBarrier barrier = new CyclicBarrier(2);
-
     // Getters
     public Map<Integer, String> getFiles() {
         return Files;
@@ -71,6 +69,7 @@ public class InvertedIndexCopy {
     // Método para la construcción del indice invertido.
     //  1. Busca los ficheros de texto recursivamente en el directorio de entrada.
     //  2. Construye el indice procesando las palabras del fichero.
+    private final CyclicBarrier barrier = new CyclicBarrier(1);
     public void buildIndex() {
         Instant start = Instant.now();
 
@@ -78,22 +77,13 @@ public class InvertedIndexCopy {
         TotalLocations = TotalLines = TotalWords = 0;
 
         //aquest fil virtual buscarà els docs a un directori
-        Thread processor = Thread.ofVirtual().name("file-finder-thread").start(() -> {
-            processDirectory();
-            try {
-                // El hilo processor espera aquí hasta que el hilo principal también llegue a este punto
-                barrier.await();
-            } catch (InterruptedException | BrokenBarrierException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
+        Thread processor = Thread.ofVirtual().name("file-finder-thread").start(this::processDirectory);
         try {
-            // El hilo principal espera aquí hasta que el hilo processor también llegue a este punto
-            barrier.await();
-        } catch (InterruptedException | BrokenBarrierException e) {
+            processor.join();
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+
         Instant finish = Instant.now();
         long timeElapsed = Duration.between(start, finish).toMillis();  //in millis
         System.out.printf("[Build Index with %d files] Total execution time: %.3f secs.\n", TotalProcessedFiles, timeElapsed / 1000.0);
@@ -276,7 +266,7 @@ public class InvertedIndexCopy {
         List<Thread> threadsList = new ArrayList<>(); //array list per a guardar threads
 
         //cada funció haurà de crear els fils, afegir-los i començar-los
-        saveInvertedIndex(indexDirectory, threadsList); //todo
+        saveInvertedIndex(indexDirectory, threadsList);
         saveFilesIds(indexDirectory, threadsList);
         saveFilesLines(indexDirectory, threadsList);
 
